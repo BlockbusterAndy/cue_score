@@ -170,6 +170,12 @@ export function chargeFoul(
   addLog(s, { playerId: pid, side, kind: 'foul', ball, text, deltas });
 }
 
+/** Mutates a draft: logs a plain end of turn (miss or safety). */
+export function logEndTurn(s: FrameState): void {
+  const pid = activePlayer(s);
+  addLog(s, { playerId: pid, side: sideOf(s.config, pid), kind: 'miss', text: 'End of turn', deltas: {} });
+}
+
 /** Mutates a draft: ends the current visit and moves to the next player who isn't skipped. */
 export function endVisit(s: FrameState, skip: (pid: string) => boolean = () => false): void {
   s.currentBreak = null;

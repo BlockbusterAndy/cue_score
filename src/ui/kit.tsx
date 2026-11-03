@@ -246,7 +246,7 @@ export function useToast() {
     return () => clearTimeout(t);
   }, [msg]);
   const node = (
-    <div aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-24 z-[60] flex justify-center px-4">
+    <div aria-live="polite" className="pointer-events-none fixed inset-x-0 top-[calc(4rem+env(safe-area-inset-top))] z-[60] flex justify-center px-4">
       {msg && (
         <div className="fade-enter rounded-full bg-cream px-4 py-2 text-sm font-semibold text-wood-dark shadow-lg">{msg}</div>
       )}

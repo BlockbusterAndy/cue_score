@@ -9,6 +9,7 @@ import {
   endVisit,
   finish,
   initBase,
+  logEndTurn,
   noSnookers,
   sideOf,
 } from '../common';
@@ -81,6 +82,7 @@ function apply(state: FrameState, action: FrameAction): FrameState {
     }
     case 'endTurn': {
       const s = clone(state);
+      logEndTurn(s);
       endVisit(s);
       return s;
     }

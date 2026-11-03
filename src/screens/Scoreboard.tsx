@@ -8,6 +8,7 @@ import {
   sideOf,
   type BallDef,
   type FrameState,
+  type LogEntry,
   type MatchAction,
   type MatchState,
 } from '../engine';
@@ -16,12 +17,13 @@ import { useMatch } from '../hooks/useMatch';
 import { frameWord, modeMeta, sideLabel } from '../modes';
 import { useStore } from '../store/AppStore';
 import type { MatchRecord } from '../store/repo';
-import { Ball, Btn, Sheet, signed, Stepper, TopBar } from '../ui/kit';
+import { Ball, Btn, Sheet, signed, Stepper, TopBar, useToast } from '../ui/kit';
 
 type SheetId = null | 'foul' | 'menu' | 'edit' | 'log' | 'reds';
 
 export function Scoreboard({ record }: { record: MatchRecord }) {
-  const { putMatch } = useStore();
+  const { putMatch, rematch } = useStore();
+  const { toast, toastNode } = useToast();
   const m = useMatch(record, putMatch);
   const { match } = m;
   const frame = match.frame;
@@ -66,6 +68,11 @@ export function Scoreboard({ record }: { record: MatchRecord }) {
           config.rules.noRack ? 'No rack' : `Rack ${frame.rack}`,
           config.rules.targetScore > 0 ? `First to ${config.rules.targetScore}` : null,
         ];
+  // Who plays after End turn / Miss, worked out by the engine itself.
+  const afterTurn = frame.over ? null : applyMatch(match, { type: 'endTurn' });
+  const nextUp =
+    afterTurn && afterTurn !== match && !afterTurn.frame.over ? playerName(config, activePlayer(afterTurn.frame)) : null;
+
   const subtitle =
     config.mode === 'killer'
       ? `${config.players.length} players · ${config.rules.lives} lives`
@@ -115,7 +122,13 @@ export function Scoreboard({ record }: { record: MatchRecord }) {
         <div className="flex-1" />
 
         {frame.over ? (
-          <FrameOver match={match} onNext={() => act({ type: 'nextFrame' })} onUndo={undo} recordId={record.id} />
+          <FrameOver
+            match={match}
+            onNext={() => act({ type: 'nextFrame' })}
+            onUndo={undo}
+            recordId={record.id}
+            onRematch={() => go(`match/${rematch(m.record)}`)}
+          />
         ) : (
           <section aria-label="Scoring" className="pb-safe flex flex-col gap-3">
             {frame.table.kind === 'points' && status.ballOn === 'Rack cleared' && (
@@ -163,11 +176,13 @@ export function Scoreboard({ record }: { record: MatchRecord }) {
               <Btn variant="primary" className="col-span-2 h-16 text-lg" onClick={() => act({ type: 'endTurn' })}>
                 {frame.mode === 'killer' ? (
                   <span className="flex flex-col leading-tight">
-                    Miss <span className="text-xs font-medium opacity-70">loses a life</span>
+                    Miss{' '}
+                    <span className="text-xs font-medium opacity-70">{nextUp ? `−1 life · next: ${nextUp}` : 'loses a life'}</span>
                   </span>
                 ) : (
                   <span className="flex flex-col leading-tight">
-                    End turn <span className="text-xs font-medium opacity-70">miss or safety</span>
+                    End turn{' '}
+                    <span className="truncate text-xs font-medium opacity-70">{nextUp ? `Next: ${nextUp}` : 'miss or safety'}</span>
                   </span>
                 )}
               </Btn>
@@ -178,7 +193,20 @@ export function Scoreboard({ record }: { record: MatchRecord }) {
 
       <FoulSheet open={sheet === 'foul'} onClose={closeSheet} match={match} onFoul={(a) => act(a, 'foul')} />
       <RedsSheet open={sheet === 'reds'} onClose={closeSheet} frame={frame} onPot={(n) => act({ type: 'pot', ball: 'red', count: n }, 'pot')} />
-      <LogSheet open={sheet === 'log'} onClose={closeSheet} frame={frame} frameNo={match.frameIndex + 1} />
+      <LogSheet
+        open={sheet === 'log'}
+        onClose={closeSheet}
+        frame={frame}
+        title={config.bestOf > 1 ? `Frame ${match.frameIndex + 1} log` : 'Log'}
+        cost={m.removalCost}
+        onRemove={(i) => {
+          m.remove(i);
+          haptic.tap();
+          setAnnounce('Entry removed');
+          toast('Removed. Undo brings it back.');
+        }}
+      />
+      {toastNode}
       <EditScoreSheet
         open={sheet === 'edit'}
         onClose={closeSheet}
@@ -490,11 +518,13 @@ function FrameOver({
   onNext,
   onUndo,
   recordId,
+  onRematch,
 }: {
   match: MatchState;
   onNext: () => void;
   onUndo: () => void;
   recordId: string;
+  onRematch: () => void;
 }) {
   const c = match.config;
   const f = match.frame;
@@ -535,6 +565,11 @@ function FrameOver({
           </Btn>
         )}
       </div>
+      {match.over && (
+        <Btn variant="primary" className="h-14 w-full text-lg" onClick={onRematch}>
+          Rematch
+        </Btn>
+      )}
       {!match.over && (
         <p className="text-center text-xs text-cream/60">
           First to {framesToWin(c)} frames · {match.frameWins.join('–')}
@@ -586,24 +621,46 @@ function FoulSheet({
         .join(', ')
     : '';
 
+  // Points and Free scoring have nothing else to choose, so tapping the ball records the foul.
+  const quick = t.kind !== 'snooker';
+  const quickEffect = (id: string) => {
+    const after = applyMatch(match, { type: 'foul', ball: id });
+    const d = after === match ? undefined : Object.values(after.frame.log.at(-1)?.deltas ?? {})[0];
+    return d === undefined ? '' : signed(d);
+  };
+  const toFouler = match.config.rules.foul.target === 'fouler';
+
   return (
     <Sheet open={open} onClose={onClose} title={`Foul by ${fouler}`}>
-      <p className="mb-2 text-sm text-cream/70">Which ball was involved?</p>
+      <p className="mb-2 text-sm text-cream/70">
+        {quick
+          ? `Tap the ball involved. ${toFouler ? `${fouler} loses` : 'The opponents get'} the points shown.`
+          : 'Which ball was involved?'}
+      </p>
       <div className="grid grid-cols-4 gap-2">
-        {balls.map((b) => (
-          <button
-            key={b.id}
-            type="button"
-            aria-pressed={ball === b.id}
-            onClick={() => setBall(b.id)}
-            className={`flex min-h-20 flex-col items-center justify-center gap-1 rounded-2xl py-2 ring-1 ${
-              ball === b.id ? 'bg-foul/25 ring-2 ring-foul' : 'bg-black/20 ring-cream/10'
-            }`}
-          >
-            <Ball ball={b} size={40} showValue={t.kind !== 'snooker'} />
-            <span className="text-xs">{b.label}</span>
-          </button>
-        ))}
+        {balls.map((b) => {
+          const fx = quick ? quickEffect(b.id) : '';
+          return (
+            <button
+              key={b.id}
+              type="button"
+              aria-pressed={quick ? undefined : ball === b.id}
+              aria-label={quick ? `Foul on ${b.label}, ${fx} points` : undefined}
+              onClick={() => {
+                if (!quick) return setBall(b.id);
+                onFoul({ type: 'foul', ball: b.id });
+                onClose();
+              }}
+              className={`flex min-h-20 flex-col items-center justify-center gap-1 rounded-2xl py-2 ring-1 active:scale-95 ${
+                ball === b.id ? 'bg-foul/25 ring-2 ring-foul' : 'bg-black/20 ring-cream/10'
+              }`}
+            >
+              <Ball ball={b} size={40} showValue={t.kind !== 'snooker'} />
+              <span className="text-xs">{b.label}</span>
+              {quick && <span className={`font-score tabular text-sm ${fx.startsWith('−') ? 'text-foul' : 'text-cream'}`}>{fx}</span>}
+            </button>
+          );
+        })}
       </div>
 
       {t.kind === 'snooker' && (
@@ -636,18 +693,22 @@ function FoulSheet({
         </div>
       )}
 
-      <Btn
-        variant="foul"
-        className="mt-4 mb-2 h-16 w-full text-lg"
-        disabled={!entry}
-        onClick={() => {
-          if (!action) return;
-          onFoul(action);
-          onClose();
-        }}
-      >
-        {entry ? `Foul · ${effect}` : 'Pick a ball'}
-      </Btn>
+      {quick ? (
+        <div className="h-3" />
+      ) : (
+        <Btn
+          variant="foul"
+          className="mt-4 mb-2 h-16 w-full text-lg"
+          disabled={!entry}
+          onClick={() => {
+            if (!action) return;
+            onFoul(action);
+            onClose();
+          }}
+        >
+          {entry ? `Foul · ${effect}` : 'Pick a ball'}
+        </Btn>
+      )}
     </Sheet>
   );
 }
@@ -686,42 +747,99 @@ function RedsSheet({
   );
 }
 
-function LogSheet({ open, onClose, frame, frameNo }: { open: boolean; onClose: () => void; frame: FrameState; frameNo: number }) {
+function LogSheet({
+  open,
+  onClose,
+  frame,
+  title,
+  cost,
+  onRemove,
+}: {
+  open: boolean;
+  onClose: () => void;
+  frame: FrameState;
+  title: string;
+  cost: (actionIndex: number) => number;
+  onRemove: (actionIndex: number) => void;
+}) {
   const balls = Object.fromEntries(getModule(frame.mode).getBalls(frame).map((b) => [b.id, b]));
+  const [armed, setArmed] = useState<number | null>(null);
+  useEffect(() => setArmed(null), [open, frame.log.length]);
+  // One shot can write several lines (e.g. "Knocked out"); only its first line is tappable.
+  const firstOfAction = (e: LogEntry, i: number) => e.action !== undefined && frame.log[i - 1]?.action !== e.action;
+
   return (
-    <Sheet open={open} onClose={onClose} title={`Frame ${frameNo} log`}>
+    <Sheet open={open} onClose={onClose} title={title}>
       {frame.log.length === 0 ? (
         <p className="pb-4 text-cream/60">Nothing yet.</p>
       ) : (
-        <ol className="mb-3 flex flex-col divide-y divide-cream/10" reversed>
-          {[...frame.log].reverse().map((e) => {
-            const deltas = Object.entries(e.deltas);
-            return (
-              <li key={e.n} className="flex items-center gap-3 py-2">
-                <span className="w-6 text-right text-xs text-cream/40 tabular">{e.n}</span>
-                {e.ball && balls[e.ball] ? (
-                  <Ball ball={balls[e.ball]} size={20} />
-                ) : (
-                  <span className="h-5 w-5" aria-hidden />
-                )}
-                <span className="min-w-0 flex-1 text-sm">
-                  <span className="font-semibold">{playerName(frame.config, e.playerId)}</span>{' '}
-                  <span className={e.kind === 'foul' ? 'text-foul' : 'text-cream/80'}>{e.text}</span>
-                </span>
-                <span className="font-score tabular text-right text-lg">
-                  {deltas.map(([side, d]) => (
-                    <span key={side} className={`block ${d < 0 ? 'text-foul' : 'text-cream'}`}>
-                      {signed(d)}
-                      {(frame.config.sides.length > 2 || e.kind === 'foul' || e.kind === 'adjust') && (
-                        <span className="ml-1 font-sans text-xs text-cream/60">{frame.config.sides[Number(side)].name}</span>
-                      )}
+        <>
+          <p className="mb-1 text-xs text-cream/60">Tap an entry to delete a mis-tap. Everything after it is recalculated.</p>
+          <ol className="mb-3 flex flex-col divide-y divide-cream/10" reversed>
+            {frame.log
+              .map((e, i) => ({ e, i }))
+              .reverse()
+              .map(({ e, i }) => {
+                const deltas = Object.entries(e.deltas);
+                const who = playerName(frame.config, e.playerId);
+                const deletable = firstOfAction(e, i);
+                const isArmed = deletable && armed === e.action;
+                const row = (
+                  <>
+                    <span className="w-6 text-right text-xs text-cream/40 tabular">{e.n}</span>
+                    {e.ball && balls[e.ball] ? <Ball ball={balls[e.ball]} size={20} /> : <span className="h-5 w-5" aria-hidden />}
+                    <span className="min-w-0 flex-1 text-sm">
+                      <span className="font-semibold">{who}</span>{' '}
+                      <span className={e.kind === 'foul' ? 'text-foul' : 'text-cream/80'}>{e.text}</span>
                     </span>
-                  ))}
-                </span>
-              </li>
-            );
-          })}
-        </ol>
+                    <span className="font-score tabular text-right text-lg">
+                      {deltas.map(([side, d]) => (
+                        <span key={side} className={`block ${d < 0 ? 'text-foul' : 'text-cream'}`}>
+                          {signed(d)}
+                          {(frame.config.sides.length > 2 || e.kind === 'foul' || e.kind === 'adjust') && (
+                            <span className="ml-1 font-sans text-xs text-cream/60">{frame.config.sides[Number(side)].name}</span>
+                          )}
+                        </span>
+                      ))}
+                    </span>
+                  </>
+                );
+                const dropped = isArmed ? cost(e.action!) : 0;
+                return (
+                  <li key={e.n} className={isArmed ? 'rounded-2xl bg-foul/10 ring-1 ring-foul/50' : ''}>
+                    {deletable ? (
+                      <button
+                        type="button"
+                        onClick={() => setArmed(isArmed ? null : e.action!)}
+                        aria-expanded={isArmed}
+                        aria-label={`${who}: ${e.text}. Tap to delete`}
+                        className="flex min-h-12 w-full items-center gap-3 rounded-xl py-2 text-left hover:bg-white/5"
+                      >
+                        {row}
+                      </button>
+                    ) : (
+                      <div className="flex min-h-12 items-center gap-3 py-2 opacity-70">{row}</div>
+                    )}
+                    {isArmed && (
+                      <div className="flex flex-col gap-2 px-2 pb-2">
+                        <p className="text-sm">
+                          Delete “{e.text}” by {who}?
+                          {dropped > 0 &&
+                            ` ${dropped} later entr${dropped === 1 ? 'y no longer fits' : 'ies no longer fit'} the rules and will go too.`}
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <Btn onClick={() => setArmed(null)}>Keep</Btn>
+                          <Btn variant="foul" onClick={() => onRemove(e.action!)}>
+                            Delete
+                          </Btn>
+                        </div>
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+          </ol>
+        </>
       )}
     </Sheet>
   );

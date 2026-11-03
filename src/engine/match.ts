@@ -35,8 +35,12 @@ export function initMatch(config: MatchConfig): MatchState {
   };
 }
 
-/** Pure match reducer. Returns the same object when an action is rejected. */
-export function applyMatch(state: MatchState, action: MatchAction): MatchState {
+/**
+ * Pure match reducer. Returns the same object when an action is rejected.
+ * `index` is the action's position in the match's action list; log entries the
+ * action creates are tagged with it so a single entry can later be removed.
+ */
+export function applyMatch(state: MatchState, action: MatchAction, index?: number): MatchState {
   if (action.type === 'nextFrame') {
     if (!state.frame.over || state.over) return state;
     const frameIndex = state.frameIndex + 1;
@@ -44,8 +48,12 @@ export function applyMatch(state: MatchState, action: MatchAction): MatchState {
   }
   if (state.over) return state;
   const mod = REGISTRY[state.config.mode];
-  const frame = mod.apply(state.frame, action);
+  let frame = mod.apply(state.frame, action);
   if (frame === state.frame) return state;
+  if (index !== undefined) {
+    const prev = state.frame.log.length;
+    frame = { ...frame, log: [...frame.log.slice(0, prev), ...frame.log.slice(prev).map((e) => ({ ...e, action: index }))] };
+  }
   const next: MatchState = { ...state, frame };
   if (mod.isFrameOver(frame)) {
     const result: FrameResult = {
@@ -68,7 +76,33 @@ export function applyMatch(state: MatchState, action: MatchAction): MatchState {
 }
 
 export function replay(config: MatchConfig, actions: MatchAction[]): MatchState {
-  return actions.reduce(applyMatch, initMatch(config));
+  return actions.reduce((s, a, i) => applyMatch(s, a, i), initMatch(config));
+}
+
+/**
+ * Removes one action from anywhere in the match and replays the rest.
+ * Later actions that no longer fit the rules (e.g. a colour after a deleted red)
+ * are dropped too; `dropped` says how many.
+ */
+export function removeAction(
+  config: MatchConfig,
+  actions: MatchAction[],
+  index: number,
+): { actions: MatchAction[]; match: MatchState; dropped: number } {
+  let match = initMatch(config);
+  const kept: MatchAction[] = [];
+  let dropped = 0;
+  actions.forEach((a, i) => {
+    if (i === index) return;
+    const next = applyMatch(match, a, kept.length);
+    if (next === match) {
+      dropped++;
+      return;
+    }
+    kept.push(a);
+    match = next;
+  });
+  return { actions: kept, match, dropped };
 }
 
 /** Per-player totals across all frames played so far (finished frames + current). */

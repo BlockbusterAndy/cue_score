@@ -139,6 +139,11 @@ export function Summary({ record }: { record: MatchRecord }) {
           >
             Copy result for WhatsApp
           </Btn>
+          {record.status !== 'live' && (
+            <Btn variant="primary" className="h-14 w-full text-lg" onClick={() => go(`match/${store.rematch(record)}`)}>
+              Rematch
+            </Btn>
+          )}
           {record.status === 'live' && (
             <Btn variant="primary" className="h-14 w-full" onClick={() => go(`match/${record.id}`)}>
               Back to the table

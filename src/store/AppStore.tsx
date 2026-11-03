@@ -25,6 +25,8 @@ interface AppStore {
   removePreset: (id: string) => void;
   putMatch: (m: MatchRecord) => void;
   removeMatch: (id: string) => void;
+  /** Starts a new match with the same players, sides and rules. Returns its id. */
+  rematch: (from: MatchRecord) => string;
 }
 
 const Ctx = createContext<AppStore | null>(null);
@@ -106,9 +108,26 @@ export function AppStoreProvider({ children }: { children: ReactNode }) {
     setMatches((prev) => prev.filter((x) => x.id !== id));
   }, []);
 
+  const rematch = useCallback(
+    (from: MatchRecord) => {
+      const saved = recordPlayers(from.config.players);
+      const idFor = new Map(from.config.players.map((p, i) => [p.id, saved[i].id]));
+      const config = {
+        ...from.config,
+        players: saved.map((p) => ({ id: p.id, name: p.name })),
+        sides: from.config.sides.map((s) => ({ ...s, playerIds: s.playerIds.map((id) => idFor.get(id) ?? id) })),
+      };
+      const now = Date.now();
+      const id = uid();
+      putMatch({ id, createdAt: now, updatedAt: now, config, actions: [], status: 'live' });
+      return id;
+    },
+    [recordPlayers, putMatch],
+  );
+
   const value = useMemo(
-    () => ({ ready, players, presets, matches, recordPlayers, removePlayer, savePreset, removePreset, putMatch, removeMatch }),
-    [ready, players, presets, matches, recordPlayers, removePlayer, savePreset, removePreset, putMatch, removeMatch],
+    () => ({ ready, players, presets, matches, recordPlayers, removePlayer, savePreset, removePreset, putMatch, removeMatch, rematch }),
+    [ready, players, presets, matches, recordPlayers, removePlayer, savePreset, removePreset, putMatch, removeMatch, rematch],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

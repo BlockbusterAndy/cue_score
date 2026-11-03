@@ -7,7 +7,7 @@ import type { MatchRecord } from '../store/repo';
 import { Ball, Btn } from '../ui/kit';
 
 export function Home() {
-  const { matches, ready } = useStore();
+  const { matches, ready, rematch } = useStore();
   const live = matches.find((m) => m.status === 'live');
   const recent = matches.filter((m) => m !== live && m.actions.length > 0).slice(0, 15);
 
@@ -26,6 +26,15 @@ export function Home() {
         <Btn variant={live ? 'primary' : 'gold'} className="h-16 w-full text-xl" onClick={() => go('new')}>
           + New match
         </Btn>
+
+        {!live && recent[0] && (
+          <Btn className="flex h-16 w-full flex-col items-center justify-center leading-tight" onClick={() => go(`match/${rematch(recent[0])}`)}>
+            <span className="text-lg">Rematch</span>
+            <span className="max-w-full truncate text-xs font-normal text-cream/70">
+              {recent[0].config.sides.map((s) => s.name).join(' v ')} · {modeMeta(recent[0].config.mode).name}
+            </span>
+          </Btn>
+        )}
 
         <section aria-label="Recent matches">
           <h2 className="mb-2 text-sm uppercase tracking-wide text-cream/60">Recent matches</h2>

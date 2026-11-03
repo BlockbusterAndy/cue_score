@@ -96,6 +96,8 @@ export interface LogEntry {
   /** Score change per side, e.g. { 0: +7 } or { 1: -4 }. */
   deltas: Record<number, number>;
   ball?: BallId;
+  /** Index of the match action that created this entry (set by the match reducer). */
+  action?: number;
 }
 
 export interface SnookerTable {

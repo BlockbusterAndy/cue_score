@@ -1,4 +1,4 @@
-import { applyCommon, chargeFoul, clone, computeLead, creditPot, endVisit, initBase, noSnookers } from '../common';
+import { applyCommon, chargeFoul, clone, computeLead, creditPot, endVisit, initBase, logEndTurn, noSnookers } from '../common';
 import type { FrameAction, FrameState, RulesModule } from '../types';
 import { checkTarget, foulPoints } from './points';
 
@@ -31,6 +31,7 @@ function apply(state: FrameState, action: FrameAction): FrameState {
     }
     case 'endTurn': {
       const s = clone(state);
+      logEndTurn(s);
       endVisit(s);
       return s;
     }

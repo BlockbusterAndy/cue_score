@@ -10,6 +10,7 @@ import {
   endVisit,
   finish,
   initBase,
+  logEndTurn,
   sideOf,
   STANDARD_BALLS,
 } from '../common';
@@ -210,6 +211,7 @@ function apply(state: FrameState, action: FrameAction): FrameState {
       return foul(state, action);
     case 'endTurn': {
       const s = clone(state);
+      logEndTurn(s);
       const t = table(s);
       settleAfterVisit(t);
       t.freeBall = false;
