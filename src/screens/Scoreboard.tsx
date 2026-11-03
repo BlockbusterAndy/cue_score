@@ -455,7 +455,7 @@ function BallPad({
             onClick={() => onPot(b.id)}
             disabled={!on}
             aria-label={`Pot ${b.label}, ${b.value} point${b.value === 1 ? '' : 's'}${!snooker && dimmed(b) ? ' (already potted)' : ''}`}
-            className="flex min-h-[5.5rem] flex-col items-center justify-center gap-1 rounded-2xl bg-black/20 py-2 ring-1 ring-cream/10 transition active:scale-95 active:bg-black/40 disabled:active:scale-100"
+            className="flex min-h-22 flex-col items-center justify-center gap-1 rounded-2xl bg-black/20 py-2 ring-1 ring-cream/10 transition active:scale-95 active:bg-black/40 disabled:active:scale-100"
           >
             <Ball ball={b} size={54} off={dimmed(b)} showValue={t.kind !== 'snooker'} />
             <span className={`text-xs font-medium ${dimmed(b) ? 'text-cream/40' : 'text-cream/85'}`}>
@@ -470,7 +470,7 @@ function BallPad({
           type="button"
           onClick={onManyReds}
           aria-label="Several reds went in on one shot"
-          className="flex min-h-[5.5rem] flex-col items-center justify-center gap-1 rounded-2xl bg-black/20 ring-1 ring-cream/10 active:scale-95"
+          className="flex min-h-22 flex-col items-center justify-center gap-1 rounded-2xl bg-black/20 ring-1 ring-cream/10 active:scale-95"
         >
           <span className="flex -space-x-4">
             <Ball ball={{ color: '#c8102e', value: 1 }} size={34} />

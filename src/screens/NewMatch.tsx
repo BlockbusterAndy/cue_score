@@ -235,7 +235,7 @@ export function NewMatch() {
 
             <div className="flex flex-col gap-3">
               {slots.map((side, i) => (
-                <Card key={i} className="!p-3">
+                <Card key={i} className="p-3!">
                   {format === 'teams' && (
                     <div className="mb-2 flex items-center gap-2">
                       <input
